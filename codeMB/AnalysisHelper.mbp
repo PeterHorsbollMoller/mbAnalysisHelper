@@ -1,0 +1,17 @@
+﻿[LINK]
+Application=..\AnalysisHelper\AnalysisHelper.mbx
+Module=Library\ARRAYLib.mbo
+Module=Library\DEBUGLib.mbo
+Module=Library\ERRORLib.mbo
+Module=Library\FILELib.mbo
+Module=Library\MATHLib.mbo
+Module=Library\OBJLib.mbo
+Module=Library\ProgramInfo.mbo
+Module=Library\RESSTRNGLib.mbo
+Module=Library\RIBBONLib.mbo
+Module=Library\STRINGLib.mbo
+Module=Library\TABLELib.mbo
+Module=AnalysisHelperMENU.mbo
+Module=DMDasymetricMapping.mbo
+Module=DMODasymetricMappingOverlapDlg.mbo
+Module=FTLFollowTheLine.mbo

@@ -1,0 +1,16 @@
+﻿Define	OVERLAP_PROCESS_TYPE_POSITIVE		1
+Define	OVERLAP_PROCESS_TYPE_NEGATIVE		2
+
+Declare Function DMODasymetricMappingOverlapDlg() As Logical
+
+Declare Function DMODLGGetInputTable() As String
+Declare Function DMODLGGetInputTabFile() As String
+Declare Function DMODLGGetInputCopyTable() As String
+Declare Function DMODLGGetInputCopyTabFile() As String
+Declare Function DMODLGCreateCopyOfInputTable() As Logical
+Declare Function DMODLGGetTabFileToProcess() As String
+Declare Function DMODLGGetTableToProcess() As String
+Declare Function DMODLGGetNumProcessTables() As Integer
+Declare Function DMODLGGetProcessTable(ByVal nItem As Integer) As String
+Declare Function DMODLGGetProcessType() As Integer
+Declare Sub DMODLGSetProcessType(ByVal nType As Integer)

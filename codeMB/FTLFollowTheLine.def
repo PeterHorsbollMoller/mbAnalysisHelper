@@ -1,0 +1,9 @@
+﻿Declare Sub FTLSelectSelection
+Declare Sub FTLSelectDownStreamSelection
+Declare Sub FTLSelectUpStreamSelection
+
+Declare Function FTLSelectUsingSelection( ByVal nNode As Integer				'1 is first node(upstream), -1 is last node (downstream), 0 is use entire line
+								, ByVal nBufferResolution As Integer	'Resolution of buffer, number of nodes for a full circle
+								, ByVal fBufferWidth	As Float		'Buffer Width
+								, ByVal sDistanceUnits As String		'Distance Units for Buffer Width, could be "m"
+								) As Integer						'Returns the numbe rof lines selected

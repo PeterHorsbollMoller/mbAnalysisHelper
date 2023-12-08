@@ -1,0 +1,194 @@
+﻿'*******************************************************************************
+'** 	Created By Peter Horsbøll Møller, Precisely
+'** 	Program:
+'** 	Modul:
+'**
+'*******************************************************************************
+
+'-------------------------------------
+Include "MapBasic.def"
+Include "Icons.def"
+Include "Menu.def"
+'**default constants...
+Include "Library\Defaults.def"
+
+'-------------------------------------
+Include "Library\DEBUGLib.def"
+Include "Library\ERRORLib.def"
+Include "Library\TABLELib.def"
+
+Dim	msPolygonTab, msPointTab, msOutputTab As String
+'**********************************************************************************************''
+'Created by Peter Horsbøll Møller, Precisely
+'Parameters:
+'	:
+'Return value:
+'
+'**********************************************************************************************''
+Function CVIPCreateVoronoiInsidePolygons( ByVal sPolygonTab As String
+								, ByVal sPointTab As String
+								, ByVal sOutputTabFile As String
+								, ByVal sIDColumn As String
+								) As Logical
+
+Dim	nPolygonRowID, nOutputRowID, nMID As Integer,
+	sPolygonID As String,
+	oPolygon, oPoint1, oPoint2, oLine, oCutter As Object,
+	aPolygonOBJ, aPolygonRowID, aPolygonID, aOutputOBJ, aOutputID, aPointsOBJ, aPointsID, aSelectionID As Alias
+
+OnError GoTo ErrorOccured
+
+CVIPCreateVoronoiInsidePolygons = FALSE
+
+	msPolygonTab	= sPolygonTab
+	msPointTab	= sPointTab
+	msOutputTab	= PathToTableName$(sOutputTabFile)
+
+	Create Table msOutputTab
+		Using msPointTab
+		File sOutputTabFile
+
+	Create Map
+		For msOutputTab CoordSys Table msPointTab
+
+	aPolygonRowID	= msPolygonTab & ".ROWID"
+	aPolygonID	= msPolygonTab & "." & sIDColumn
+	aPolygonOBJ	= msPolygonTab & ".OBJ"
+
+	aOutputID		= msOutputTab & "." & sIDColumn
+	aOutputOBJ	= msOutputTab & ".OBJ"
+
+	aPointsID		= msPointTab & "." & sIDColumn
+	aPointsOBJ	= msPointTab & ".OBJ"
+
+	Map From msPointTab, msPolygonTab, msOutputTab
+	nMID = FrontWindow()
+	Set Map Window nMID Layer msPolygonTab Editable On
+
+	Fetch First From msPolygonTab
+	Do Until EOT(msPolygonTab)
+		nPolygonRowID	= aPolygonRowID
+		If ColumnInfo(msPolygonTab, sIDColumn, COL_INFO_TYPE) = COL_TYPE_CHAR Then
+			sPolygonID	= aPolygonID
+		Else
+			sPolygonID	= Str$(aPolygonID)
+		End If
+		oPolygon		= aPolygonOBJ
+
+		Select * From msPolygonTab
+			Where ROWID = nPolygonRowID
+			Into __qVoronoiPolygon Hide
+		Set Target On
+
+'		Select * From msOutputTab
+'			Where OBJ WithIn oPolygon
+'			Into __TO_DELETE NoSelect
+'		Delete From __TO_DELETE
+'		Close Table __TO_DELETE
+'		Commit Table msOutputTab
+
+		Select * From msPointTab
+			Where OBJ Within oPolygon
+			Into __qVoronoiPoints Hide
+
+		Do Case TableInfo(__qVoronoiPoints, TAB_INFO_NROWS)
+			Case 0
+				'**No points selected within boundary
+				Print "Polygons holds no Points!"
+				Call TABClose("__qVoronoiPoints")
+
+			Case 1
+				Insert Into msOutputTab
+					(aOutputID, OBJ)
+					Select aPointsID, OBJ From __qVoronoiPoints
+				Update msOutputTab
+					Set OBJ = oPolygon
+					Where ROWID = TableInfo(msOutputTab, TAB_INFO_NROWS)
+				Call TABClose("__qVoronoiPoints")
+
+			Case 2
+				Set Map Window nMID Layer msOutputTab Editable On
+
+				Fetch First From __qVoronoiPoints
+				oPoint1 = aPointsOBJ
+				Fetch Next From __qVoronoiPoints
+				oPoint2 = aPointsOBJ
+				oLine = ConnectObjects(oPoint1, oPoint2, TRUE)
+				oLine = RotateAtPoint(oLine, 90, Centroid(oLine))
+
+				Insert Into msOutputTab
+					(obj)
+					Values (oPolygon)
+
+				nOutputRowID	= TableInfo(msOutputTab, TAB_INFO_NROWS)
+				Select * From msOutputTab
+					Where ROWID = nOutputRowID
+					Into __qTemp Hide
+				Set Target On
+				Call TABClose("__qTemp")
+
+				Insert Into msOutputTab
+					(obj)
+					Values (oLine)
+
+				nOutputRowID	= TableInfo(msOutputTab, TAB_INFO_NROWS)
+				Select * From msOutputTab
+					Where ROWID = nOutputRowID
+					Into __qCutter Hide
+				Create Cutter Into Target
+				Call TABClose("__qCutter")
+
+				Fetch Last From msOutputTab
+				oCutter = aOutputOBJ
+
+				Delete From msOutputTab
+					Where ROWID = (nOutputRowID - 1)
+				Delete From msOutputTab
+					Where ROWID = (nOutputRowID + 0)
+				Delete From msOutputTab
+					Where ROWID = (nOutputRowID + 1)
+
+				Insert Into msOutputTab
+					(aOutputID, OBJ)
+					Select aPointsOBJ, OBJ From __qVoronoiPoints
+				Update msOutputTab
+					Set OBJ = Erase(oPolygon, oCutter)
+					Where ROWID = TableInfo(msOutputTab, TAB_INFO_NROWS) - 1
+				Update msOutputTab
+					Set OBJ = Overlap(oPolygon, oCutter)
+					Where ROWID = TableInfo(msOutputTab, TAB_INFO_NROWS)
+
+				Set Map Window nMID Layer msPolygonTab Editable On
+				Call TABClose("__qVoronoiPoints")
+
+			Case Else
+				aSelectionID	= "Selection." & sIDColumn
+				Create Object As Voronoi
+					from Selection
+					Into Table msOutputTab
+					Data aOutputID = aSelectionID
+				Call TABClose("__qVoronoiPoints")
+
+		End Case
+
+		Call TABClose("__qTemp")
+		Call TABClose("__qCutter")
+		Call TABClose("__qVoronoiPoints")
+		Call TABClose("__qVoronoiPolygon")
+
+		Fetch Next From msPolygonTab
+
+	Loop
+
+	Close Window nMID
+
+	CVIPCreateVoronoiInsidePolygons = TRUE
+
+	Exit Function
+'-------------------------
+ErrorOccured:
+	Call ERRCreate(Err(), Error$(), "CVIPCreateVoronoiInsidePolygons")
+	Call ERRShow()
+
+End Function
+

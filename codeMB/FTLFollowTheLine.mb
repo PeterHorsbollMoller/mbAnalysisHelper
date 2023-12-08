@@ -1,0 +1,329 @@
+﻿'*******************************************************************************
+'** 	Created By Peter Horsbøll Møller, Precisely
+'** 	Program:
+'** 	Modul:
+'**
+'*******************************************************************************
+
+'-------------------------------------
+Include "MapBasic.def"
+Include "Icons.def"
+Include "Menu.def"
+'**default constants...
+Include "Library\Defaults.def"
+
+'-------------------------------------
+Include "Library\DEBUGLib.def"
+Include "Library\ERRORLib.def"
+Include "Library\OBJLib.def"
+Include "Library\TABLELib.def"
+
+Include "FTLFollowTheLine.def"
+
+Declare Sub FTLSelectUsingSelection_Single
+
+
+Dim	mnNode, mnBufferResolution, mnLoop As Integer,
+	mfBufferWidth As Float,
+	msTab, msdistanceUnit As String
+
+'**********************************************************************************************''
+'Created by Peter Horsbøll Møller, Precisely
+'Parameters:
+'
+'**********************************************************************************************''
+Sub FTLSelectSelection
+
+Dim	nRows As Integer
+
+OnError GoTo ErrorOccured
+
+	nRows = FTLSelectUsingSelection(0, 10, 1, "m")	'Using the last node of each line
+	Exit Sub
+'-------------------------
+ErrorOccured:
+	Call ERRCreate(Err(), Error$(), "FTLSelectDownStreamSelection")
+	Call ERRShow()
+
+End Sub
+
+'**********************************************************************************************''
+'Created by Peter Horsbøll Møller, Precisely
+'Parameters:
+'
+'**********************************************************************************************''
+Sub FTLSelectDownStreamSelection
+
+Dim	nRows As Integer
+
+OnError GoTo ErrorOccured
+
+	nRows = FTLSelectUsingSelection(-1, 10, 1, "m")	'Using the last node of each line
+	Exit Sub
+'-------------------------
+ErrorOccured:
+	Call ERRCreate(Err(), Error$(), "FTLSelectDownStreamSelection")
+	Call ERRShow()
+
+End Sub
+
+'**********************************************************************************************''
+'Created by Peter Horsbøll Møller, Precisely
+'Parameters:
+'
+'**********************************************************************************************''
+Sub FTLSelectUpStreamSelection
+
+Dim	nRows As Integer
+
+OnError GoTo ErrorOccured
+
+	nRows	= FTLSelectUsingSelection(1, 10, 1, "m")	'Using the first node of each line
+	Exit Sub
+'-------------------------
+ErrorOccured:
+	Call ERRCreate(Err(), Error$(), "FTLSelectUpStreamSelection")
+	Call ERRShow()
+
+End Sub
+
+'**********************************************************************************************''
+'Created by Peter Horsbøll Møller, Precisely
+'Parameters:
+'
+'**********************************************************************************************''
+Function FTLSelectUsingSelection(	  ByVal nNode As Integer				'1 is first node(upstream), -1 is last node (downstream), 0 is use entire line
+							, ByVal nBufferResolution As Integer	'Resolution of buffer, number of nodes for a full circle
+							, ByVal fBufferWidth	As Float		'Buffer Width
+							, ByVal sDistanceUnits As String		'Distance Units for Buffer Width, could be "m"
+							) As Integer						'Returns the numbe rof lines selected
+
+Dim	oLine, oNode, oBuffer As Object,
+	sQuery As String
+'Dim	oLine, oNode, oBuffer As Object,
+'	nRowID, nBaseRowID, nLoop As Integer,
+'	sTab, sQuery As String
+
+OnError GoTo ErrorOccured
+
+FTLSelectUsingSelection = 0
+
+	mnBufferResolution	= nBufferResolution
+	mfBufferWidth		= fBufferWidth
+	msdistanceUnit		= sDistanceUnits
+	mnNode			= nNode
+
+	msTab 	= SelectionInfo(SEL_INFO_TABLENAME)
+	sQuery	= SelectionInfo(SEL_INFO_SELNAME)
+
+	Fetch First From Selection
+	oLine 	= Selection.OBJ
+	If mnNode = 0 Then
+		oBuffer	= Buffer(oLine, mnBufferResolution, mfBufferWidth, msdistanceUnit)
+	Else
+		oNode 	= OBJGetNode(oLine, 1, mnNode)
+		oBuffer	= Buffer(oNode, mnBufferResolution, mfBufferWidth, msdistanceUnit)
+	End If
+
+	Call TABClose(sQuery)
+
+	If mnNode = 0 Then
+		Select *
+			From msTab
+			Where OBJ Intersects oBuffer
+			Into __Intersecting_lines NoSelect Hide
+	Else
+		Select *
+			From msTab
+			Where OBJGetNode(OBJ, 1, -1 * mnNode) Within oBuffer
+			Into __Intersecting_lines NoSelect Hide
+	End If
+
+	'**New method using Progressbar
+	If TableInfo(__Intersecting_lines, TAB_INFO_NROWS) = 0 Then
+		Call TABClose("__Intersecting_lines")
+		Exit Function
+	End If
+
+	Call TABClose("__FOLLOW__LINES")
+	Create Table __FOLLOW__LINES
+		( LINE_ROWID	Integer
+		, FOLLOW_ORDER	Integer
+		)
+		File PathToDirectory$(TempFileName$("")) & "__FOLLOW__LINES.tab"
+	Create Map For __FOLLOW__LINES
+		CoordSys Table msTab
+
+	Set Progressbars Off
+
+	Progressbar "Following the network..."
+		Calling FTLSelectUsingSelection_Single
+		Range TableInfo(msTab, TAB_INFO_NROWS)
+
+	Set Progressbars On
+	Call TABClose("__Intersecting_lines")
+
+	If TableInfo(__FOLLOW__LINES, TAB_INFO_NROWS) = 0 Then
+		Note "No lines seem to connect downstream to the selected object!"
+		Call TABClose("__FOLLOW__LINES")
+		Exit Function
+	End If
+
+	Select * From msTab
+		Where ROWID In (Select LINE_ROWID From __FOLLOW__LINES)
+
+'	Call TABClose("__FOLLOW__LINES")
+	FTLSelectUsingSelection	= SelectionInfo(SEL_INFO_NROWS)
+
+
+	'**Old method
+'	Set Progressbars Off
+'	Do While TRUE
+'		nLoop	= nLoop + 1
+'		If TableInfo(__Intersecting_lines, TAB_INFO_NROWS) = 0 Then
+'			Call TABClose("__Intersecting_lines")
+'			Exit Do
+'		End If
+'
+'		If Not TABIsOpen("__FOLLOW__LINES") Then
+'			Create Table __FOLLOW__LINES
+'				( LINE_ROWID	Integer
+'				, FOLLOW_ORDER	Integer
+'				)
+'				File PathToDirectory$(TempFileName$("")) & "__FOLLOW__LINES.tab"
+'			Create Map For __FOLLOW__LINES
+'				CoordSys Table sTab
+'		End If
+'
+'		Fetch First From __Intersecting_lines
+'		Do Until EOT(__Intersecting_lines)
+'			nRowID		= __Intersecting_lines.ROWID
+'			nBaseRowID	= BaseTableRowID(__Intersecting_lines)
+'			oLine 		= __Intersecting_lines.OBJ
+'			oNode 		= OBJGetNode(oLine, 1, nNode)
+'			If nRowID = 1 Then
+'				If nNode = 0 Then
+'					oBuffer	= Buffer(oLine, nBufferResolution, fBufferWidth, sDistanceUnits)
+'				Else
+'					oNode 	= OBJGetNode(oLine, 1, nNode)
+'					oBuffer	= Buffer(oNode, nBufferResolution, fBufferWidth, sDistanceUnits)
+'				End If
+'			Else
+'				If nNode = 0 Then
+'					oBuffer	= Combine(oBuffer, Buffer(oLine, nBufferResolution, fBufferWidth, sDistanceUnits))
+'				Else
+'					oNode 	= OBJGetNode(oLine, 1, nNode)
+'					oBuffer	= Combine(oBuffer, Buffer(oNode, nBufferResolution, fBufferWidth, sDistanceUnits))
+'				End If
+'			End If
+'
+'			Insert Into __FOLLOW__LINES
+'				(LINE_ROWID, FOLLOW_ORDER, OBJ) Values (nBaseRowID, nLoop, oNode)
+'
+'			Fetch Next From __Intersecting_lines
+'		Loop
+'		Commit Table __FOLLOW__LINES
+'
+'		Select *
+'			From sTab
+'			Where Not ROWID In (Select LINE_ROWID From __FOLLOW__LINES)
+'			And OBJ Intersects oBuffer
+'			Into __Intersecting_lines NoSelect Hide
+'	Loop
+'	Set Progressbars On
+'	Call TABClose("__Intersecting_lines")
+'
+'	If TableInfo(__FOLLOW__LINES, TAB_INFO_NROWS) = 0 Then
+'		Note "No lines seem to connect downstream to the selected object!"
+'		Call TABClose("__FOLLOW__LINES")
+'		Exit Function
+'	End If
+'
+'	Select * From sTab
+'		Where ROWID In (Select LINE_ROWID From __FOLLOW__LINES)
+'
+''	Call TABClose("__FOLLOW__LINES")
+'	FTLSelectUsingSelection	= SelectionInfo(SEL_INFO_NROWS)
+
+	Exit Function
+'-------------------------
+ErrorOccured:
+	Call ERRCreate(Err(), Error$(), "FTLSelectUsingSelection")
+	Call ERRShow()
+
+End Function
+
+'**********************************************************************************************''
+'Created by Peter Horsbøll Møller, Precisely
+'Parameters:
+'
+'**********************************************************************************************''
+Sub FTLSelectUsingSelection_Single
+
+Dim	oLine, oNode, oBuffer As Object,
+	nRowID, nBaseRowID As Integer
+
+OnError GoTo ErrorOccured
+
+	If TableInfo(__Intersecting_lines, TAB_INFO_NROWS) = 0 Then
+		Call TABClose("__Intersecting_lines")
+		Progressbar = -1
+		Exit Sub
+	End If
+
+	mnLoop	= mnLoop + 1
+
+	Fetch First From __Intersecting_lines
+	Do Until EOT(__Intersecting_lines)
+		nRowID		= __Intersecting_lines.ROWID
+		nBaseRowID	= BaseTableRowID(__Intersecting_lines)
+		oLine 		= __Intersecting_lines.OBJ
+		oNode 		= OBJGetNode(oLine, 1, mnNode)
+		If nRowID = 1 Then
+			If mnNode = 0 Then
+				oBuffer	= Buffer(oLine, mnBufferResolution, mfBufferWidth, msdistanceUnit)
+			Else
+				oNode 	= OBJGetNode(oLine, 1, mnNode)
+				oBuffer	= Buffer(oNode, mnBufferResolution, mfBufferWidth, msdistanceUnit)
+			End If
+		Else
+			If mnNode = 0 Then
+				oBuffer	= Combine(oBuffer, Buffer(oLine, mnBufferResolution, mfBufferWidth, msdistanceUnit))
+			Else
+				oNode 	= OBJGetNode(oLine, 1, mnNode)
+				oBuffer	= Combine(oBuffer, Buffer(oNode, mnBufferResolution, mfBufferWidth, msdistanceUnit))
+			End If
+		End If
+
+		Insert Into __FOLLOW__LINES
+			(LINE_ROWID, FOLLOW_ORDER, OBJ) Values (nBaseRowID, mnLoop, oNode)
+
+		Fetch Next From __Intersecting_lines
+	Loop
+	Commit Table __FOLLOW__LINES
+	Call TABClose("__Intersecting_lines")
+
+	If mnNode = 0 Then
+		Select *
+			From msTab
+			Where Not ROWID In (Select LINE_ROWID From __FOLLOW__LINES)
+			And OBJ Intersects oBuffer
+			Into __Intersecting_lines NoSelect Hide
+	Else
+		Select *
+			From msTab
+			Where Not ROWID In (Select LINE_ROWID From __FOLLOW__LINES)
+			And OBJGetNode(OBJ, 1, -1 * mnNode) Within oBuffer
+			Into __Intersecting_lines NoSelect Hide
+	End If
+
+	Progressbar = TableInfo(__FOLLOW__LINES, TAB_INFO_NROWS)
+
+	Exit Sub
+'-------------------------
+ErrorOccured:
+	Call ERRCreate(Err(), Error$(), "FTLSelectUsingSelection_Single")
+	Call ERRShow()
+
+End Sub
+

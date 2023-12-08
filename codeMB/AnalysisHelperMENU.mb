@@ -1,0 +1,190 @@
+﻿'*******************************************************************************
+'** Created by Peter Horsbøll Møller, Precisely
+'** Program:
+'** Modul:
+'**
+'*******************************************************************************
+
+'-------------------------------------
+Include "MapBasic.def"
+Include "Enums.def"
+Include "Icons.def"
+Include "Menu.def"
+Include "RibbonControls.def"
+'**default constants...
+Include "Library\Defaults.def"
+'Include "Library\MI_ICONS_X64.def"
+
+Include "DMDasymetricMapping.def"
+Include "FTLFollowTheLine.def"
+
+Define xProgram 			"AnalysisHelper"
+Define xProgramName			"AnalysisHelper"
+Define xProgramMenu			"AnalysisHelper"
+Define xVersion 			"1.0.0"
+Define xYear				"2023"
+Define xAddToMenuBar		FALSE
+
+Define FILE_INI			GetFolderPath$(FOLDER_MI_PREFERENCE) & xProgram & ".ini"
+Define FILE_DBG			ApplicationDirectory$() & xProgram & ".dbg"
+'Define FILE_DLL			ApplicationDirectory$() & xProgram & ".dll"
+Define FILE_PAD			GetFolderPath$(FOLDER_MI_PREFERENCE) & xProgram & ".btp"
+Define PATH_IMAGES			ApplicationDirectory$() & "Images\"
+
+'-------------------------------------
+Include "Library\DEBUGLib.def"
+Include "Library\ERRORLib.def"
+Include "Library\ProgramInfo.def"
+Include "Library\RIBBONLib.def"
+Include "Library\TABLELib.def"
+
+'-----------------------------------------------------------------------------------------
+Declare Sub Main
+Declare Sub MENUBuildRibbonInterface
+Declare Sub EndProgram
+Declare Sub EndHandler
+
+'**********************************************************************************************''
+'	09-11-2023 11:04:56		1.0.0:	Dasymetric Mapping Overlap, positive and negative
+'								Follow network of lines up stream, down stream or in all directions
+'**********************************************************************************************''
+'**********************************************************************************************''
+'	Calculate Center of Mass using Point table
+'	Calculate center of mass using point table and vector grid
+'	Calculate shortest line from points to table of lines
+'	Follow network of lines for a given distance
+'	Create Voronoi for points inside polygons, see Voronoi Tool
+'	Find records that intersects/are within/contain current selection, see https://community.precisely.com/communities/community-home/digestviewer/viewthread?GroupId=19&MessageKey=6a2324b2-0605-49f6-a05c-a4ce70c2fa6e
+'	Calculate nearest distance from objects in one table to objects in another table
+'	Dynamic way of adding additional scripts to a drowdown, with a name, description and script file
+'	MLQT - query multiple layers and spit out an report for the findings
+'	Create squares from points, see https://community.precisely.com/discussion/create-square-grids-from-points-or-rotate-individual-diamonds-on-their-centroid
+'	Calculate statistics from selected objects, see https://community.precisely.com/discussion/mapinfo-monday-statistics-from-selected-records
+' 	Calculate statistics for objects in a table intersecting a selected object
+'**********************************************************************************************''
+
+'**********************************************************************************************''
+'Created by Peter Horsbøll Møller, Precisely
+'Parameters:
+'
+'**********************************************************************************************''
+Sub Main
+
+OnError GoTo ErrorOccured
+
+	'***Initializing ApplicationInfo
+	Call PRGISetApplicationName(xProgram)
+	Call PRGISetApplicationVersion(xVersion)
+	Call PRGISetApplicationCopyrightYear(xYear)
+	Call PRGISetApplicationDevelopedBy("Peter Horsbøll Møller")
+	Call PRGISetApplicationImageUri(MI_IMG_MAP_REDISTRICTER_16)
+
+	'***Enabling Debug if file exists
+	Call DEBUGEnableByFile(FILE_DBG)
+
+	Call MENUBuildRibbonInterface
+
+	Exit Sub
+'-------------------------
+ErrorOccured:
+	Call ERRCreate(Err(), Error$(), "Main")
+	Call ERRShow()
+
+End Sub
+
+
+'**********************************************************************************************''
+'Created by Peter Horsbøll Møller, Precisely
+'Parameters:
+'
+'**********************************************************************************************''
+Sub MENUBuildRibbonInterface
+
+Dim	nCtrlIdx As Integer,
+	sTabName, sGroupName As String
+
+OnError GoTo ErrorOccured
+
+	sTabName		= "tabAnalysis"
+	nCtrlIdx	= RBNInsertTabAfter(sTabName, "Analysis", "", TAB_SPATIAL)
+
+	sGroupName	= "grpDasymetric"
+	nCtrlIdx	= RBNTabAddGroup(sGroupName, "Dasymetric Mapping", sTabName)
+
+	nCtrlIdx	= RBNGroupAddButton("cmdDasymtricOverlap", "Positive Overlap", "", sTabName, sGroupName)
+	If nCtrlIdx > 0 Then
+		Call RBNControlSetToolTipIdx(nCtrlIdx, PRGIGetApplicationName(), "Minimize demographic polygon using positive dasymetric overlap.", "")
+		Call RBNControlSetIconsIdx(nCtrlIdx, CONTROL_SIZE_LARGE, "", MI_IMG_SPA_SMOOTHLINES_32)
+		Call RBNControlSetCustomMBXHandlerIdx(nCtrlIdx, "DMDasymetricMappingOverlapPosi")
+	End If
+	nCtrlIdx	= RBNGroupAddButton("cmdDasymtricOverlap", "Negative Overlap", "", sTabName, sGroupName)
+	If nCtrlIdx > 0 Then
+		Call RBNControlSetToolTipIdx(nCtrlIdx, PRGIGetApplicationName(), "Minimize demographic polygon using negative dasymetric overlap.", "")
+		Call RBNControlSetIconsIdx(nCtrlIdx, CONTROL_SIZE_LARGE, "", MI_IMG_SPA_UNSMOOTHLINES_32)
+		Call RBNControlSetCustomMBXHandlerIdx(nCtrlIdx, "DMDasymetricMappingOverlapNega")
+	End If
+
+	sGroupName	= "grpNetwork"
+	nCtrlIdx	= RBNTabAddGroup(sGroupName, "Network", sTabName)
+
+	nCtrlIdx	= RBNGroupAddButton("cmdFollow", "Follow", "", sTabName, sGroupName)
+	If nCtrlIdx > 0 Then
+		Call RBNControlSetToolTipIdx(nCtrlIdx, PRGIGetApplicationName(), "Follow connecting lines from selected line segment.", "")
+		Call RBNControlSetIconsIdx(nCtrlIdx, CONTROL_SIZE_LARGE, "", MI_IMG_SPA_POLYLINETOEDGE_32)
+		Call RBNControlSetCustomMBXHandlerIdx(nCtrlIdx, "FTLSelectSelection")
+	End If
+	nCtrlIdx	= RBNGroupAddButton("cmdFollowDownstream", "Follow Downstream", "", sTabName, sGroupName)
+	If nCtrlIdx > 0 Then
+		Call RBNControlSetToolTipIdx(nCtrlIdx, PRGIGetApplicationName(), "Follow connecting lines downstream from selected line segment.", "")
+		Call RBNControlSetIconsIdx(nCtrlIdx, CONTROL_SIZE_LARGE, "", MI_IMG_SPA_POLYLINETOEDGE_32)
+		Call RBNControlSetCustomMBXHandlerIdx(nCtrlIdx, "FTLSelectDownStreamSelection")
+	End If
+	nCtrlIdx	= RBNGroupAddButton("cmdFollowUpstream", "Follow Upstream", "", sTabName, sGroupName)
+	If nCtrlIdx > 0 Then
+		Call RBNControlSetToolTipIdx(nCtrlIdx, PRGIGetApplicationName(), "Follow connecting lines upstream from selected line segment.", "")
+		Call RBNControlSetIconsIdx(nCtrlIdx, CONTROL_SIZE_LARGE, "", MI_IMG_SPA_POLYLINETOEDGE_32)
+		Call RBNControlSetCustomMBXHandlerIdx(nCtrlIdx, "FTLSelectUpStreamSelection")
+	End If
+
+	Exit Sub
+'-------------------------
+ErrorOccured:
+	Call ERRCreate(Err(), Error$(), "MENUBuildRibbonInterface")
+	Call ERRShow()
+
+End Sub
+
+'****************************************
+'**   Created by Peter Horsbøll Møller, Precisely
+'**   Ending MapBasic application
+'****************************************
+Sub EndProgram
+
+OnError GoTo ErrorOccured
+
+	End Program
+	Exit Sub
+'-------------------------
+ErrorOccured:
+	Call ERRCreate(Err(), Error$(), "EndProgram")
+	Call ERRShow()
+
+End Sub
+
+'**********************************************************************************************''
+'Created by Peter Horsbøll Møller, Precisely
+'Parameters:
+'
+'**********************************************************************************************''
+Sub EndHandler
+
+OnError GoTo ErrorOccured
+
+	Call RBNEndHandler
+	Exit Sub
+'-------------------------
+ErrorOccured:
+	Call ERRCreate(Err(), Error$(), "EndHandler")
+	Call ERRShow()
+
+End Sub

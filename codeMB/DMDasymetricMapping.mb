@@ -1,0 +1,240 @@
+﻿'*******************************************************************************
+'** 	Created By Peter Horsbøll Møller, Precisely
+'** 	Program:
+'** 	Modul:
+'**
+'*******************************************************************************
+
+'-------------------------------------
+Include "MapBasic.def"
+Include "Icons.def"
+Include "Menu.def"
+'**default constants...
+Include "Library\Defaults.def"
+
+'-------------------------------------
+Include "Library\DEBUGLib.def"
+Include "Library\ERRORLib.def"
+Include "Library\FILELib.def"
+Include "Library\TABLELib.def"
+
+Include "DMDasymetricMapping.def"
+Include "DMODasymetricMappingOverlapDlg.def"
+
+Declare Sub DMDasymetricMappingOverlap_Single
+
+Dim	msProcessTable, msTableToProcess As String
+'**********************************************************************************************''
+'Created by Peter Horsbøll Møller, Precisely
+'Parameters:
+'	This will erase parts of the objects that intersect objects in other tables
+'	This could remove areas of parks, water, non-inhabitated land or similar from population polygons
+'**********************************************************************************************''
+Sub DMDasymetricMappingOverlapPosi
+
+OnError GoTo ErrorOccured
+
+	Call DMODLGSetProcessType(OVERLAP_PROCESS_TYPE_POSITIVE)
+	Call DMDasymetricMappingOverlap
+
+	Exit Sub
+'-------------------------
+ErrorOccured:
+	Call ERRCreate(Err(), Error$(), "DMDasymetricMappingOverlapPosi")
+	Call ERRShow()
+
+End Sub
+
+'**********************************************************************************************''
+'Created by Peter Horsbøll Møller, Precisely
+'Parameters:
+'	This will erase parts of the objects that intersect objects in other tables
+'	This could remove areas of parks, water, non-inhabitated land or similar from population polygons
+'**********************************************************************************************''
+Sub DMDasymetricMappingOverlapNega
+
+OnError GoTo ErrorOccured
+
+	Call DMODLGSetProcessType(OVERLAP_PROCESS_TYPE_NEGATIVE)
+	Call DMDasymetricMappingOverlap
+
+	Exit Sub
+'-------------------------
+ErrorOccured:
+	Call ERRCreate(Err(), Error$(), "DMDasymetricMappingOverlapNega")
+	Call ERRShow()
+
+End Sub
+
+'**********************************************************************************************''
+'Created by Peter Horsbøll Møller, Precisely
+'Parameters:
+'	This will erase parts of the objects that intersect objects in other tables
+'	This could remove areas of parks, water, non-inhabitated land or similar from population polygons
+'**********************************************************************************************''
+Sub DMDasymetricMappingOverlap
+
+Dim	nTab As Integer,
+	sTempTabFile As String
+
+OnError GoTo ErrorOccured
+
+	If Not DMODasymetricMappingOverlapDlg() Then
+		Exit Sub
+	End If
+
+	If Not DMODLGCreateCopyOfInputTable() Then
+		If Ask("Warning: Processing table '" & DMODLGGetTableToProcess() & "' may lead to loss of data." & Chr$(10) & Chr$(10) & "Make sure to create a backup before continuing!", "Abort", "Continue") Then
+			Exit Sub
+		End If
+	Else
+		If TABIsOpen() Then
+			Close Table
+		End If
+	End If
+
+	Call TABClose("__TableToProcess")
+	sTempTabFile	= FILEWindowsTempFolder() & "__TableToProcess.tab"
+	Commit Table DMODLGGetInputTable()
+		As sTempTabFile	'DMODLGGetTabFileToProcess()
+	Open Table sTempTabFile	'DMODLGGetTabFileToProcess()
+	msTableToProcess	= PathToTableName$(sTempTabFile)
+
+	For nTab = 1 To DMODLGGetNumProcessTables()
+		msProcessTable	= DMODLGGetProcessTable(nTab)
+		Call DEBUGPrint( nTab & " of " & DMODLGGetNumProcessTables() & ": Process Table '" & DMODLGGetTableToProcess() & "' using '" & msProcessTable & "'")
+
+		Fetch First From msTableToProcess
+
+		Progressbar nTab & " of " & DMODLGGetNumProcessTables() & ": Processing input table " & DMODLGGetTableToProcess() & " using table " & msProcessTable
+			Calling DMDasymetricMappingOverlap_Single
+			Range TableInfo(msTableToProcess, TAB_INFO_NROWS)
+
+		If Not CommandInfo(CMD_INFO_STATUS) Then
+			Exit For
+		End If
+	Next
+
+	Do Case DMODLGGetProcessType()
+		Case OVERLAP_PROCESS_TYPE_POSITIVE
+			'**Setting Temp Table as the next Process Table
+			msProcessTable	= msTableToProcess
+			If DMODLGCreateCopyOfInputTable() Then
+				'**Saving a copy of the temporary processed table as the output table specified
+				Commit Table DMODLGGetInputTable()
+					As DMODLGGetTabFileToProcess()
+				Open Table DMODLGGetTabFileToProcess()
+				msTableToProcess	= DMODLGGetTableToProcess()
+			Else
+				'**Setting Input Table as table to be processed
+				msTableToProcess	= DMODLGGetInputTable()
+			End If
+
+			Call DEBUGPrint( nTab & ". Process Table '" & DMODLGGetTableToProcess() & "' using '" & msProcessTable & "'")
+
+			Fetch First From msTableToProcess
+
+			Progressbar (DMODLGGetNumProcessTables() + 1) & ": Processing input table " & msTableToProcess & " against positive areas"
+				Calling DMDasymetricMappingOverlap_Single
+				Range TableInfo(msTableToProcess, TAB_INFO_NROWS)
+
+			If Not CommandInfo(CMD_INFO_STATUS) Then
+				Exit Sub
+			End If
+
+		Case OVERLAP_PROCESS_TYPE_NEGATIVE
+			If DMODLGCreateCopyOfInputTable() Then
+				'**Saving a copy of the temporary processed table as the output table specified
+				Commit Table msTableToProcess
+					As DMODLGGetTabFileToProcess()
+				Open Table DMODLGGetTabFileToProcess()
+			Else
+				'**Closing the Input Table and overwriting it with the temporary processed table
+				Close Table DMODLGGetInputTable()
+				Commit Table msTableToProcess
+					As DMODLGGetInputTabFile()
+				Open Table DMODLGGetInputTabFile()
+			End If
+	End Case
+
+	Exit Sub
+'-------------------------
+ErrorOccured:
+	Call ERRCreate(Err(), Error$(), "DMDasymetricMappingOverlap")
+	Call ERRShow()
+
+End Sub
+
+'**********************************************************************************************''
+'Created by Peter Horsbøll Møller, Precisely
+'Parameters:
+'
+'**********************************************************************************************''
+Sub DMDasymetricMappingOverlap_Single
+
+Dim	aRowID, aInput, aOverlap As Alias,
+	oInput, oOverlap As Object,
+	nRowID As Integer
+
+OnError GoTo ErrorOccured
+
+	aRowID	= msTableToProcess & ".ROWID"
+	aInput	= msTableToProcess & ".OBJ"
+	nRowID	= aRowID
+	oInput	= aInput
+
+	Call DEBUGPrint("   Input Record " & nRowID & " Start: " & msProcessTable)
+	Select COL1, AggregateCombine(OBJ)
+		From msProcessTable
+		Where OBJ Intersects oInput
+		Into __OBJ__COMBINED NoSelect Hide
+	Call DEBUGPrint("   Query finished")
+
+'	Do Case DMODLGGetProcessType()
+'		Case OVERLAP_PROCESS_TYPE_POSITIVE
+'			If TableInfo(__OBJ__COMBINED, TAB_INFO_NROWS) > 0 Then
+'				Print "Record " & nRowID & " was deleted. It didn't intersect any objects from table " & msProcessTable
+'				Delete From msTableToProcess
+'					Where	ROWID	= nRowID
+'			Else
+'				oInput = Overlap(oInput, oOverlap)
+'
+'				Update msTableToProcess
+'					Set 		OBJ		= oInput
+'					Where	ROWID	= nRowID
+'			End If
+'		Case OVERLAP_PROCESS_TYPE_NEGATIVE
+			If TableInfo(__OBJ__COMBINED, TAB_INFO_NROWS) > 0 Then
+				Fetch First From __OBJ__COMBINED
+				oOverlap	= __OBJ__COMBINED.OBJ
+
+				If oInput Entirely Within oOverlap Then
+					Print "Record " & nRowID & " was deleted. It was fully inside the intersecting objects from table " & msProcessTable
+					Delete From msTableToProcess
+						Where	ROWID	= nRowID
+				Else
+					oInput = Erase(oInput, oOverlap)
+
+					Update msTableToProcess
+						Set 		OBJ		= oInput
+						Where	ROWID	= nRowID
+				End If
+			End If
+'	End Case
+	Call DEBUGPrint("   Object Processing finished")
+
+	Fetch Next From msTableToProcess
+	If EOT(msTableToProcess) Then
+		Progressbar = -1
+	Else
+		Progressbar = nRowID
+	End If
+
+	Exit Sub
+'-------------------------
+ErrorOccured:
+	Call ERRCreate(Err(), Error$(), "DMDasymetricMappingOverlap_Single")
+	Call ERRShow()
+
+End Sub
+
